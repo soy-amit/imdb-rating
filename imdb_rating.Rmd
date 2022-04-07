@@ -1,0 +1,369 @@
+---
+title: 'Data 501 Fall 2021: Semester End Project'
+author: "Amit Kumar Srivastava, Priyanka Lalge, Shruti Shukla, Srujan Kumar Nunna"
+date: "Due Date = 12/17/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+As part of the MSDA Data 501 final project, our group decided to research on the following questions. 
+
+- Is an Oscar winning actor or actress in the cast associated with the IMDB rating of the movie?
+- Is there a difference in mean audience scores between genres?
+- Which variables are associated with, and hence can be used to predict, the Rating of a movie on IMDB?
+
+## Team Work
+
+First, we started working on the research questions individually, later discussed and picked the best amongst these questions. After this, we decided that each member of the group shall try to come up with the prediction model individually in order to get familiar with all the related concepts. All of us came up with possible solutions for the research questions and then collaborated and enhanced our works to get the best possible solution.
+
+Loading required libraries...
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(car)
+library(ggcorrplot)
+library(GGally)
+library(car)
+library(MASS)
+```
+
+# Exploratory data analysis
+
+We load the data from the url provided. Once the data is loaded we took a glance on the summary and structure of the dataset. 
+
+```{r}
+load(url("http://people.math.binghamton.edu/qiao/data501/data/movies.RData"))
+head(movies)
+```
+
+```{r}
+summary(movies)
+str(movies)
+```
+
+## Preprocessing
+
+The columns are segregated into two lists - `cat_var` containing the categorical variables and `cont_vars` with the continuous variables. Factor is applied to the categorical variables in the `movies` dataset.
+
+`title`, `actor1`, `actor2`, `actor3`, `actor4`, `actor5`, `imdb_url`, `rt_url` columns are not considered at all as these variables doesn't have much significance as per our research orientation. Further `director` and `studio` are also removed as the structure contains 200+ levels in the structure. 
+
+`thtr_rel_year`, `thtr_rel_day`, `dvd_rel_year`, `dvd_rel_day` is the list of variables that are not considered as we assumed it would be better to deal with the months rather than year and days.
+
+Lastly, the rows with `NA` values are removed from the dataset. 
+
+```{r}
+names(movies)
+```
+
+```{r}
+movies1 <- subset(movies, select = -c(title, studio, thtr_rel_year, thtr_rel_day, dvd_rel_year, dvd_rel_day, director, actor1, actor2, actor3, actor4, actor5, imdb_url, rt_url))
+
+summary(movies1)
+```
+
+```{r}
+movies2 <- movies1 %>% filter(!is.na(runtime), !is.na(dvd_rel_month))
+summary(movies2)
+```
+
+```{r}
+
+cat_vars <- c("title_type", "genre", "mpaa_rating", "critics_rating", "audience_rating", "best_pic_nom", "best_pic_win", "best_actor_win", "best_actress_win", "best_dir_win", "top200_box", "thtr_rel_month", "dvd_rel_month")
+
+cont_vars <- c("runtime", "imdb_rating", "imdb_num_votes", "critics_score", "audience_score")
+
+movies2[cat_vars] = lapply(movies2[cat_vars], factor)
+```
+
+Now, we start with the exploration of the data. First of all we explore the continuous variables. 
+Here we observed the descriptive summary of the variables as well as the correlation among the variables. 
+
+```{r}
+summary(movies2[cont_vars])
+```
+
+
+```{r}
+corr <- round(cor(movies2[cont_vars]), 1)
+head(corr)
+```
+As per the correlation matrix, we could observe a correlation between `imdb_rating`, `critics_score` and `audience_score`. The variable `runtime` is not correlated significantly. 
+
+```{r}
+# Visualize the correlation matrix
+# --------------------------------
+# method = "square" (default)
+ggcorrplot(corr, method = "circle")
+```
+
+After the observation of the continuous variables, we proceed towards the categorical variables. As the main question revolves around the `imdb_rating`, all the categorical variables are plotted against `imdb_rating`. 
+
+```{r}
+
+ggplot(movies2, aes(x = factor(title_type), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(genre), y = imdb_rating)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+ggplot(movies2, aes(x = factor(mpaa_rating), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(critics_rating), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(audience_rating), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(best_pic_nom), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(best_pic_win), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(best_actor_win), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(best_actress_win), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(best_dir_win), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(top200_box), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(thtr_rel_month), y = imdb_rating)) + geom_boxplot()
+ggplot(movies2, aes(x = factor(dvd_rel_month), y = imdb_rating)) + geom_boxplot()
+
+```
+
+\newpage
+
+# Inference
+
+The purpose of this section is to use the statistical inference tool of t-test and check the first question of our research, i.e., 
+
+- Is an Oscar winning actor or actress in the cast associated with the IMDB rating of the movie?
+
+To answer the question, first of all, we split the dataset into two subsets. One of the subset contains the movies that casted either a best winning actor or actress. The second set contains the movies that did not cast an oscar winning actor/actress.
+
+```{r}
+movies_oscar_cast = movies2[(movies2$best_actor_win=='yes' | movies2$best_actress_win ==  'yes'),]
+movies_without_oscar_cast = movies2[(movies2$best_actor_win=='no' & movies2$best_actress_win =='no'),]
+head(movies_oscar_cast)
+```
+
+
+Once the data is split, we come up with our null and alternate hypothesis and perform the two-sample t-test. 
+
+$H_0$: There is no difference in imdb rating for movies casted by oscar won actor/actress
+$H_a$: There is a difference in imdb rating for movies casted by oscar won actor/actress
+
+Note: Here we assumed variance to be equal in order to simplify our research.
+
+```{r}
+t.test(movies_oscar_cast$imdb_rating, movies_without_oscar_cast$imdb_rating , alt = "two.sided", conf = 0.95, var.equal = TRUE)
+```
+Since the p-value $\nless \alpha = 0.05$, hence we fail to reject the $H_0$. It implies that there is no difference in imdb rating for movies casted by oscar won actor/actress.
+
+
+\newpage
+
+# Modeling
+
+We shall proceed to split the data into two subsets for modeling purpose - train dataset with 70% rows and test dataset with 30% rows of the `movies2` dataset. Further, we shall take the help of the model selection techniques to consider the adequate predictor variables. In addition, we will validate the MSE for various models and select the one with the least MSE.
+
+```{r}
+set.seed(1234)
+index = sample(c(rep(TRUE,450), rep(FALSE,192)))
+mov_train = movies2[index, ]
+mov_test = movies2[!index, ]
+
+dim(mov_train)
+dim(mov_test)
+
+```
+
+With the split of dataset in place, we will start with question 2 and also with the model selection process. 
+
+Now, to answer the 2nd question of our project, we shall perform one way anova test using either the pairwise t-test for the `genre` categorical variable or `TukeyHSD`. We proceed with the `TukeyHSD` below.
+
+Since our anova is significant (p-value$= 2e-16 < \alpha = 0.05$) hence we performed `TukeyHSD` which gives the pairwise comparison of means. From the results of the graph we have found that Documentary-Action & Adventure, Drama-Action & Adventure, Musical & Performing Arts-Action & Adventure, Documentary-Comedy, Drama-Comedy, Musical & Performing Arts-Comedy, Drama-Documentary, Horror-Documentary, Mystery & Suspense-Documentary, Other-Documentary, Horror-Drama, Musical & Performing Arts-Horror, Mystery & Suspense-Musical & Performing Arts these pairs are significant and their mean difference would not be zero.
+
+```{r}
+mov.aov = aov(audience_score ~ genre , data = mov_train)
+summary(mov.aov)
+```
+
+```{r}
+TukeyHSD(mov.aov)
+```
+
+```{r}
+plot(TukeyHSD(mov.aov), las=1, cex.axis=0.7)
+```
+
+
+```{r}
+# pairwise.t.test(mov_train$audience_score, mov_train$genre, p.adjust.method = "bonferroni")
+```
+
+
+Now, let us proceed with the modeling. 
+
+```{r}
+full <- lm(imdb_rating ~ ., data = mov_train)
+null <- lm(imdb_rating ~ 1, data = mov_train)
+```
+
+
+```{r}
+X <- model.matrix(full)[,-1]
+
+# both BIC models with forward/backward steps
+both_BIC = step(null, list(lower = ~ 1, upper = formula(full)), trace = F,
+direction = 'both', k = log(nrow(X)))
+
+both_backward_BIC = step(full, list( upper = null), trace = F,
+direction = 'both', k = log(nrow(X)))
+
+# both BIC models with forward/backward steps
+both_AIC = step(null, list(lower = ~ 1, upper = formula(full)), trace = F,
+direction = 'both', k = 2)
+
+both_backward_AIC = step(full, list( upper = null), trace = F,
+direction = 'both', k = 2)
+```
+
+
+```{r}
+
+MSE.BIC.forward = mean((predict(both_BIC, mov_test) - mov_test$imdb_rating)^2)
+MSE.BIC.backward = mean((predict(both_backward_BIC, mov_test) - mov_test$imdb_rating)^2)
+
+MSE.AIC.forward = mean((predict(both_AIC, mov_test) - mov_test$imdb_rating)^2)
+MSE.AIC.backward = mean((predict(both_backward_AIC, mov_test) - mov_test$imdb_rating)^2)
+
+data.frame(MSE.BIC.forward, MSE.BIC.backward, MSE.AIC.forward, MSE.AIC.backward)
+```
+
+```{r}
+formula(both_BIC) # imdb_num_votes, critics_rating
+formula(both_backward_BIC)
+
+formula(both_AIC)
+formula(both_backward_AIC)
+```
+
+We select the `both_AIC` model with least MSE. Now, we shall proceed to diagnose the model to improve it. 
+From the diagnostic plots, we could observe that linearity assumption of the model doesn't hold and a possible heteroscedasticity is observed. 
+
+
+```{r}
+par(mfrow = c(2,2))
+plot(both_AIC)
+```
+
+Let us apply the transformation to remove heteroscedasticity and linearize the model.
+
+```{r}
+par(mfrow = c(1,2))
+boxcox(both_AIC, plotit=T)
+boxcox(both_AIC, plotit=T, lambda=seq(1.5,3,by=0.05))
+```
+
+As per boxcox plot, we shall consider a transformation of 10/4 ($=2.5$) for the response variable. 
+
+```{r}
+# transformed model
+mod1 <- lm(imdb_rating ^ 2.5 ~ audience_score + critics_score + genre + imdb_num_votes + 
+    audience_rating + critics_rating + runtime, data = mov_train)
+
+#Diagnostic Plots
+par(mfrow = c(2,2))
+plot(mod1)
+```
+
+Let us now check for collinearity. As per below, here we observe that, VIF $< 10$ & $\kappa_p < 15$. Hence, collinearity is ok.
+
+```{r}
+# VIF
+car::vif(mod1)
+```
+
+```{r}
+# condition index
+X = model.matrix(mod1)[,-1]
+R = cor(X)
+ev = eigen(R)$val
+sqrt(ev[1]*ev^(-1))
+```
+
+Let us check for autocorrelation even though we could skip it. From the graph, we could see that no correlation exists.
+
+```{r}
+acf(resid(mod1))
+```
+
+Now, our modelling step is complete.
+
+\newpage
+
+# Prediction
+
+First, let us test the prediction with one of the existing row in the `mov_test` dataset. In this case, let us consider the movie `Locke`. The dataframe is created with the values relevant to `Locke` movie. 
+
+```{r}
+new_df = data.frame(audience_score = 71 ,
+critics_score = 91,
+genre  = 'Mystery & Suspense',
+imdb_num_votes  = 82851,
+audience_rating  = 'Upright',
+critics_rating  = 'Certified Fresh',
+runtime  = 85)
+```
+
+Based on the prediction, we could observe that the fitted value is `7.121779` which is ~ equal to the original value of `7.1`. Hence we can say that the model prediction is working properly. 
+
+```{r}
+predict(mod1 , newdata = new_df, interval = 'prediction')^(1/2.5)
+```
+
+Now let us predict for a movie not from the datasets. In this case, let us consider the movie `Dune`. The dataframe is created with the values relevant to `Dune` movie.
+
+```{r}
+new_df1 = data.frame(audience_score = 90,
+critics_score = 83,
+genre  = 'Science Fiction & Fantasy',
+imdb_num_votes  = 390470,
+audience_rating  = 'Upright',
+critics_rating  = 'Certified Fresh',
+runtime  = 155)
+```
+
+Based on the prediction, we could observe that the fitted value is `7.9` which is very close to the original value of `8.2`. Hence we can say that the model prediction is working properly.
+
+```{r}
+predict(mod1 , newdata = new_df1, interval = 'prediction')^(1/2.5)
+```
+
+Now let us predict for a movie not from the datasets. In this case, let us consider the movie `RUN`. The dataframe is created with the values relevant to `RUN` movie.
+
+```{r}
+new_df2 = data.frame(audience_score = 74,
+critics_score = 88,
+genre  = 'Mystery & Suspense',
+imdb_num_votes  = 62456,
+audience_rating  = 'Upright',
+critics_rating  = 'Certified Fresh',
+runtime  = 90)
+```
+
+Based on the prediction, we could observe that the fitted value is `7.1` which is very close to the original value of `6.7`. Hence we can say that the model prediction is working properly.
+
+```{r}
+predict(mod1 , newdata = new_df2, interval = 'prediction')^(1/2.5)
+```
+
+# Conclusion
+
+While researching on the topics mentioned in the report, first we found many insignificant variables which were removed from the dataset in the pre-processing step. We have also removed the rows having ‘NA’ values. For the first research question, we used two sample t-test and determined that there is no association between Oscar winning actor or actress with the IMDB rating of the movies.
+
+For the second research question we have performed TukeyHSD test which suggests that there is a difference between mean audience score between genres. We have found few such pairs in the results.
+
+For the third research question we found that audience_score, critics_score, genre, imdb_num_votes, audience_rating, critics_rating and runtime are associated and can be used to predict the rating of a movie on IMBD. We have used `both_AIC` model with least MSE. We have tested our model on the given dataset values as well as with the values apart from the given dataset and we obtain a good accuracy which falls within the 95% confidence interval. 
+
+For the model built, we didn't consider the interaction terms as well as different model approaches like lasso and ridge regression. In the future studies, these could be considered while model building and see if there is an improvement in prediction. 
+
+One of the shortcomings of the dataset is that the data available is related to the movies of USA and hence for the movies outside of the USA, there could be possible bias if this model is used. 
+
+---
